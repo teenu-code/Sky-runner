@@ -1,137 +1,134 @@
 from pathlib import Path
+import re
 
-html = r'''<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sky Runner</title>
-<style>
-*{box-sizing:border-box}
-body{margin:0;overflow:hidden;font-family:Arial,sans-serif;touch-action:manipulation}
-#game{width:100vw;height:100vh;position:relative;overflow:hidden;background:linear-gradient(#65c7ff,#e8f8ff)}
-#title{position:absolute;top:20px;width:100%;text-align:center;font-size:30px;font-weight:bold}
-#score{position:absolute;top:70px;left:20px;font-size:20px;font-weight:bold;z-index:10}
-#lives{position:absolute;top:100px;left:20px;font-size:20px;z-index:10}
-#player{position:absolute;left:70px;bottom:100px;width:48px;height:48px;background:#ff4757;border:4px solid white;border-radius:50%;z-index:5}
-#player:after{content:"🙂";font-size:27px;position:absolute;left:6px;top:4px}
-#ground{position:absolute;bottom:0;width:100%;height:100px;background:#2ed573}
-.obstacle{position:absolute;bottom:100px;width:45px;height:60px;background:#6c5ce7;border-radius:8px}
-.coin{position:absolute;bottom:190px;width:32px;height:32px;background:gold;border:3px solid orange;border-radius:50%}
-#menu{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:20}
-button{padding:15px 30px;border:0;border-radius:25px;background:#222;color:white;font-size:20px;font-weight:bold}
-#gameOver{display:none;text-align:center}
-</style>
-</head>
-<body>
-<div id="game">
-<div id="title">🌤️ SKY RUNNER</div>
-<div id="score">Score: 0</div>
-<div id="lives">❤️❤️❤️</div>
-<div id="player"></div>
-<div id="ground"></div>
-<div id="menu">
-<h1>🏃 SKY RUNNER</h1>
-<p>Tap the screen to jump!</p>
-<button id="startButton">START GAME</button>
-<div id="gameOver">
-<h2>💥 GAME OVER</h2>
-<p id="finalScore"></p>
-<p id="highScore"></p>
-<button id="restartButton">PLAY AGAIN</button>
-</div>
-</div>
-</div>
-<script>
-const player=document.getElementById("player");
-const game=document.getElementById("game");
-const scoreText=document.getElementById("score");
-const livesText=document.getElementById("lives");
-const menu=document.getElementById("menu");
-const startButton=document.getElementById("startButton");
-const restartButton=document.getElementById("restartButton");
-const gameOver=document.getElementById("gameOver");
-const finalScore=document.getElementById("finalScore");
-const highScore=document.getElementById("highScore");
-let running=false,jumping=false,score=0,lives=3,speed=5,timer;
+source = Path("/mnt/data/Sky_Runner.html")
+out = Path("/mnt/data/Sky_Runner_Pastel_Music_Modes.html")
 
-function jump(){
- if(!running||jumping)return;
- jumping=true; let height=0;
- let up=setInterval(()=>{
-  height+=9; player.style.bottom=(100+height)+"px";
-  if(height>=170){
-   clearInterval(up);
-   let down=setInterval(()=>{
-    height-=9; player.style.bottom=(100+height)+"px";
-    if(height<=0){clearInterval(down);player.style.bottom="100px";jumping=false;}
-   },20);
+html = source.read_text(encoding="utf-8")
+
+# Pastel visual upgrade
+html = html.replace(
+    'background:linear-gradient(#65c7ff,#e8f8ff)',
+    'background:linear-gradient(180deg,#c9f1ff 0%,#e8d9ff 55%,#fff1cf 100%)'
+)
+html = html.replace(
+    'background:#ff4757;border:4px solid white',
+    'background:#ff9fba;border:4px solid white;box-shadow:0 7px 16px rgba(255,111,155,.25)'
+)
+html = html.replace('background:#2ed573}', 'background:#a8e6cf;border-top:5px solid rgba(255,255,255,.6)}')
+html = html.replace('background:#6c5ce7;', 'background:#b9a7f5;border:3px solid rgba(255,255,255,.8);')
+html = html.replace('background:gold;border:3px solid orange;', 'background:#ffe28a;border:3px solid #fff1b8;box-shadow:0 4px 12px rgba(255,194,78,.3);')
+html = html.replace('background:#222;color:white;', 'background:#ff9fba;color:white;box-shadow:0 6px 0 #ed7898;')
+
+# Add music mode controls before the player
+html = html.replace(
+    '<div id="player"></div>',
+    '''<div id="musicControls" style="position:absolute;right:15px;top:72px;z-index:30;display:flex;gap:7px;align-items:center;">
+      <button id="musicMode" style="padding:9px 12px;border:0;border-radius:18px;background:rgba(255,255,255,.82);color:#6b5b95;font-size:13px;font-weight:bold;box-shadow:0 5px 16px rgba(91,77,125,.15)">🎵 CALM</button>
+      <button id="muteButton" aria-label="Mute music" style="padding:9px 12px;border:0;border-radius:18px;background:rgba(255,255,255,.82);color:#6b5b95;font-size:16px">🔊</button>
+    </div>
+    <div id="player"></div>'''
+)
+
+# Add Web Audio music/effects after the existing variable declarations
+marker = 'let running=false,jumping=false,score=0,lives=3,speed=5,timer;'
+audio_code = r'''
+let audioCtx=null,masterGain=null,musicTimer=null,musicStep=0;
+let muted=false,musicMode="calm";
+const musicModeButton=document.getElementById("musicMode");
+const muteButton=document.getElementById("muteButton");
+
+function initAudio(){
+  if(!audioCtx){
+    audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    masterGain=audioCtx.createGain();
+    masterGain.gain.value=.12;
+    masterGain.connect(audioCtx.destination);
   }
- },20);
+  if(audioCtx.state==="suspended") audioCtx.resume();
 }
-
-function createObstacle(){
- if(!running)return;
- let box=document.createElement("div"); box.className="obstacle"; game.appendChild(box);
- let right=-60;
- let move=setInterval(()=>{
-  if(!running){clearInterval(move);box.remove();return;}
-  right+=speed; box.style.right=right+"px";
-  let p=player.getBoundingClientRect(),b=box.getBoundingClientRect();
-  if(p.left<b.right&&p.right>b.left&&p.top<b.bottom&&p.bottom>b.top){
-   clearInterval(move);box.remove();lives--;
-   livesText.textContent="❤️".repeat(lives)+"🖤".repeat(3-lives);
-   if(lives<=0)endGame(); return;
-  }
-  if(right>window.innerWidth+60){
-   clearInterval(move);box.remove();score++;scoreText.textContent="Score: "+score;
-   if(score%5===0)speed+=0.7;
-  }
- },20);
+function tone(freq,duration,type="sine",volume=.12,delay=0){
+  if(!audioCtx||muted)return;
+  const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+  o.type=type;o.frequency.value=freq;
+  g.gain.setValueAtTime(.001,audioCtx.currentTime+delay);
+  g.gain.linearRampToValueAtTime(volume,audioCtx.currentTime+delay+.02);
+  g.gain.exponentialRampToValueAtTime(.001,audioCtx.currentTime+delay+duration);
+  o.connect(g);g.connect(masterGain);
+  o.start(audioCtx.currentTime+delay);
+  o.stop(audioCtx.currentTime+delay+duration+.03);
 }
+function jumpSound(){tone(520,.10,"sine",.16);tone(760,.14,"sine",.10,.06)}
+function coinSound(){tone(880,.10,"triangle",.18);tone(1175,.16,"triangle",.13,.07)}
+function hitSound(){tone(180,.18,"sawtooth",.13);tone(110,.25,"sawtooth",.10,.08)}
+function gameOverSound(){tone(330,.20,"sine",.14);tone(247,.28,"sine",.12,.18);tone(196,.34,"sine",.10,.40)}
 
-function createCoin(){
- if(!running)return;
- let item=document.createElement("div");item.className="coin";game.appendChild(item);
- let right=-40;
- let move=setInterval(()=>{
-  if(!running){clearInterval(move);item.remove();return;}
-  right+=speed;item.style.right=right+"px";
-  let p=player.getBoundingClientRect(),c=item.getBoundingClientRect();
-  if(p.left<c.right&&p.right>c.left&&p.top<c.bottom&&p.bottom>c.top){
-   score+=5;scoreText.textContent="Score: "+score;clearInterval(move);item.remove();return;
-  }
-  if(right>window.innerWidth+50){clearInterval(move);item.remove();}
- },20);
+const calmMelody=[523.25,659.25,783.99,659.25,587.33,698.46,880,698.46];
+const loudMelody=[261.63,329.63,392.00,523.25,392.00,493.88,587.33,783.99];
+
+function startMusic(){
+  stopMusic();
+  if(!audioCtx)return;
+  musicStep=0;
+  const notes=musicMode==="loud"?loudMelody:calmMelody;
+  const interval=musicMode==="loud"?170:290;
+  musicTimer=setInterval(()=>{
+    const note=notes[musicStep%notes.length];
+    tone(note,musicMode==="loud"?.15:.20,musicMode==="loud"?"triangle":"sine",musicMode==="loud"?.055:.035);
+    if(musicStep%4===0){
+      tone(note/2,.24,"sine",musicMode==="loud"?.025:.018,.02);
+    }
+    musicStep++;
+  },interval);
 }
-
-function startGame(){
- running=true;score=0;lives=3;speed=5;
- scoreText.textContent="Score: 0";livesText.textContent="❤️❤️❤️";
- player.style.bottom="100px";menu.style.display="none";gameOver.style.display="none";
- clearInterval(timer);
- timer=setInterval(()=>{createObstacle();if(Math.random()>0.4)createCoin();},1500);
+function stopMusic(){
+  if(musicTimer){clearInterval(musicTimer);musicTimer=null;}
 }
-
-function endGame(){
- running=false;clearInterval(timer);
- let oldScore=Number(localStorage.getItem("skyRunnerHighScore")||0);
- let best=Math.max(score,oldScore);
- localStorage.setItem("skyRunnerHighScore",best);
- menu.style.display="flex";startButton.style.display="none";gameOver.style.display="block";
- finalScore.textContent="Your score: "+score;
- highScore.textContent="🏆 High score: "+best;
+function updateMusicButton(){
+  musicModeButton.textContent=musicMode==="loud"?"🎵 LOUD":"🎵 CALM";
 }
+musicModeButton.onclick=()=>{
+  initAudio();
+  musicMode=musicMode==="calm"?"loud":"calm";
+  updateMusicButton();
+  if(running)startMusic();
+};
+muteButton.onclick=()=>{
+  muted=!muted;
+  muteButton.textContent=muted?"🔇":"🔊";
+  if(masterGain)masterGain.gain.value=muted?0:.12;
+};
+'''
+html = html.replace(marker, marker + audio_code)
 
-startButton.onclick=startGame;
-restartButton.onclick=startGame;
-game.addEventListener("touchstart",e=>{if(running){e.preventDefault();jump();}},{passive:false});
-game.addEventListener("click",()=>{if(running)jump();});
-</script>
-</body>
-</html>'''
+# Connect sounds to gameplay
+html = html.replace(
+    'function jump(){\n  if(!running||jumping)return;',
+    'function jump(){\n  if(!running||jumping)return;\n  jumpSound();'
+)
+html = html.replace(
+    'livesText.textContent="❤️".repeat(lives)+"🖤".repeat(3-lives);',
+    'livesText.textContent="❤️".repeat(lives)+"🖤".repeat(3-lives); hitSound();'
+)
+html = html.replace(
+    'score+=5;scoreText.textContent="Score: "+score;clearInterval(move);item.remove();return;',
+    'score+=5;scoreText.textContent="Score: "+score;coinSound();clearInterval(move);item.remove();return;'
+)
+html = html.replace(
+    'function startGame(){\n  running=true;',
+    'function startGame(){\n  initAudio(); startMusic();\n  running=true;'
+)
+html = html.replace(
+    'function endGame(){\n  running=false;clearInterval(timer);',
+    'function endGame(){\n  running=false;clearInterval(timer);stopMusic();gameOverSound();'
+)
 
-path = Path("/mnt/data/Sky_Runner.html")
-path.write_text(html, encoding="utf-8")
-print(path)
+# Add a small mode label to the menu
+html = html.replace(
+    '<button id="startButton">START GAME</button>',
+    '<button id="startButton">START GAME</button><p style="color:#6e6784;font-size:14px">🎵 Switch between CALM and LOUD music anytime</p>'
+)
 
+out.write_text(html, encoding="utf-8")
+print(f"Created: {out}")
+print("Added CALM/LOUD music switching, mute control, and sound effects while keeping the game playable offline.")
