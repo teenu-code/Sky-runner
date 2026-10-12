@@ -132,3 +132,139 @@ html = html.replace(
 out.write_text(html, encoding="utf-8")
 print(f"Created: {out}")
 print("Added CALM/LOUD music switching, mute control, and sound effects while keeping the game playable offline.")
+from pathlib import Path
+
+html = r'''<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sky Runner</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;font-family:Arial,sans-serif;touch-action:manipulation}
+#game{width:100vw;height:100vh;position:relative;overflow:hidden;background:linear-gradient(#65c7ff,#e8f8ff)}
+#title{position:absolute;top:20px;width:100%;text-align:center;font-size:30px;font-weight:bold}
+#score{position:absolute;top:70px;left:20px;font-size:20px;font-weight:bold;z-index:10}
+#lives{position:absolute;top:100px;left:20px;font-size:20px;z-index:10}
+#player{position:absolute;left:70px;bottom:100px;width:48px;height:48px;background:#ff4757;border:4px solid white;border-radius:50%;z-index:5}
+#player:after{content:"🙂";font-size:27px;position:absolute;left:6px;top:4px}
+#ground{position:absolute;bottom:0;width:100%;height:100px;background:#2ed573}
+.obstacle{position:absolute;bottom:100px;width:45px;height:60px;background:#6c5ce7;border-radius:8px}
+.coin{position:absolute;bottom:190px;width:32px;height:32px;background:gold;border:3px solid orange;border-radius:50%}
+#menu{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:20}
+button{padding:15px 30px;border:0;border-radius:25px;background:#222;color:white;font-size:20px;font-weight:bold}
+#gameOver{display:none;text-align:center}
+</style>
+</head>
+<body>
+<div id="game">
+<div id="title">🌤️ SKY RUNNER</div>
+<div id="score">Score: 0</div>
+<div id="lives">❤️❤️❤️</div>
+<div id="player"></div>
+<div id="ground"></div>
+<div id="menu">
+<h1>🏃 SKY RUNNER</h1>
+<p>Tap the screen to jump!</p>
+<button id="startButton">START GAME</button>
+<div id="gameOver">
+<h2>💥 GAME OVER</h2>
+<p id="finalScore"></p>
+<p id="highScore"></p>
+<button id="restartButton">PLAY AGAIN</button>
+</div>
+</div>
+</div>
+<script>
+const player=document.getElementById("player");
+const game=document.getElementById("game");
+const scoreText=document.getElementById("score");
+const livesText=document.getElementById("lives");
+const menu=document.getElementById("menu");
+const startButton=document.getElementById("startButton");
+const restartButton=document.getElementById("restartButton");
+const gameOver=document.getElementById("gameOver");
+const finalScore=document.getElementById("finalScore");
+const highScore=document.getElementById("highScore");
+let running=false,jumping=false,score=0,lives=3,speed=5,timer;
+
+function jump(){
+ if(!running||jumping)return;
+ jumping=true; let height=0;
+ let up=setInterval(()=>{
+  height+=9; player.style.bottom=(100+height)+"px";
+  if(height>=170){
+   clearInterval(up);
+   let down=setInterval(()=>{
+    height-=9; player.style.bottom=(100+height)+"px";
+    if(height<=0){clearInterval(down);player.style.bottom="100px";jumping=false;}
+   },20);
+  }
+ },20);
+}
+
+function createObstacle(){
+ if(!running)return;
+ let box=document.createElement("div"); box.className="obstacle"; game.appendChild(box);
+ let right=-60;
+ let move=setInterval(()=>{
+  if(!running){clearInterval(move);box.remove();return;}
+  right+=speed; box.style.right=right+"px";
+  let p=player.getBoundingClientRect(),b=box.getBoundingClientRect();
+  if(p.left<b.right&&p.right>b.left&&p.top<b.bottom&&p.bottom>b.top){
+   clearInterval(move);box.remove();lives--;
+   livesText.textContent="❤️".repeat(lives)+"🖤".repeat(3-lives);
+   if(lives<=0)endGame(); return;
+  }
+  if(right>window.innerWidth+60){
+   clearInterval(move);box.remove();score++;scoreText.textContent="Score: "+score;
+   if(score%5===0)speed+=0.7;
+  }
+ },20);
+}
+
+function createCoin(){
+ if(!running)return;
+ let item=document.createElement("div");item.className="coin";game.appendChild(item);
+ let right=-40;
+ let move=setInterval(()=>{
+  if(!running){clearInterval(move);item.remove();return;}
+  right+=speed;item.style.right=right+"px";
+  let p=player.getBoundingClientRect(),c=item.getBoundingClientRect();
+  if(p.left<c.right&&p.right>c.left&&p.top<c.bottom&&p.bottom>c.top){
+   score+=5;scoreText.textContent="Score: "+score;clearInterval(move);item.remove();return;
+  }
+  if(right>window.innerWidth+50){clearInterval(move);item.remove();}
+ },20);
+}
+
+function startGame(){
+ running=true;score=0;lives=3;speed=5;
+ scoreText.textContent="Score: 0";livesText.textContent="❤️❤️❤️";
+ player.style.bottom="100px";menu.style.display="none";gameOver.style.display="none";
+ clearInterval(timer);
+ timer=setInterval(()=>{createObstacle();if(Math.random()>0.4)createCoin();},1500);
+}
+
+function endGame(){
+ running=false;clearInterval(timer);
+ let oldScore=Number(localStorage.getItem("skyRunnerHighScore")||0);
+ let best=Math.max(score,oldScore);
+ localStorage.setItem("skyRunnerHighScore",best);
+ menu.style.display="flex";startButton.style.display="none";gameOver.style.display="block";
+ finalScore.textContent="Your score: "+score;
+ highScore.textContent="🏆 High score: "+best;
+}
+
+startButton.onclick=startGame;
+restartButton.onclick=startGame;
+game.addEventListener("touchstart",e=>{if(running){e.preventDefault();jump();}},{passive:false});
+game.addEventListener("click",()=>{if(running)jump();});
+</script>
+</body>
+</html>'''
+
+path = Path("/mnt/data/Sky_Runner.html")
+path.write_text(html, encoding="utf-8")
+print(path)
